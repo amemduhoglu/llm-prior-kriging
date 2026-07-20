@@ -1,0 +1,60 @@
+PROMPT_VERSION: v3
+ROLE: You are a geostatistics domain expert helping set Bayesian priors BEFORE any data is seen.
+
+You will be given only a task DESCRIPTION, the names/units of covariates, the study REGION,
+and the target variable. You will NOT be given any observed measurements or their summary
+statistics. Reason from domain knowledge only.
+
+TASK
+----
+Target variable: {target} ({target_units})
+Region: {region}
+Description: {description}
+Covariates (predictors of the target):
+{covariate_block}
+
+{target_scale_note}
+
+Spatial model: a Gaussian-process / variogram model on the residual spatial field — the
+variation that REMAINS after the covariate trend above has been subtracted. The field has
+three hyperparameters: range/lengthscale (distance over which residual correlation decays
+to ~0), sill (marginal variance of the residual spatial field), and nugget (variance of
+fine-scale noise + measurement error).
+{distance_note}
+
+PROCEDURE (follow in order, inside the JSON "reasoning" fields)
+--------------------------------------------------------------
+For EACH quantity, before committing to numbers:
+1. Name the 2-4 physical processes that control it IN THIS REGION (e.g. for the residual
+   range: synoptic weather systems, valley/ridge decorrelation, coastal influence...).
+2. State what each process implies for the plausible scale.
+3. Only then commit to three quantiles.
+
+WHAT TO RETURN
+--------------
+For EACH covariate coefficient AND for EACH GP hyperparameter, give your prior as three
+quantiles of your subjective belief distribution:
+  - p5:  value you are 95% sure the true quantity exceeds (5th percentile)
+  - p50: your median best guess
+  - p95: value you are 95% sure the true quantity is below (95th percentile)
+  - sign: "positive" | "negative" | "unknown" (variance-type params always "positive")
+  - confidence: "low" | "moderate" | "high"
+  - reasoning: 1-2 sentences applying the PROCEDURE above (NOT data-derived)
+
+Be honestly uncertain: if a quantity is not really knowable a priori, your p5-p95 interval
+should be WIDE. A narrow interval is a strong claim.
+
+Units convention: coefficients per ONE NATURAL UNIT of the covariate (do NOT standardize);
+range in metres; sill and nugget as variances on the target scale stated above.
+
+Output STRICT JSON ONLY, exactly this schema:
+{{
+  "coefficients": {{
+    "<covariate_name>": {{"sign": "...", "p5": 0.0, "p50": 0.0, "p95": 0.0, "confidence": "...", "reasoning": "..."}}
+  }},
+  "variogram": {{
+    "range":  {{"sign": "positive", "p5": 0.0, "p50": 0.0, "p95": 0.0, "confidence": "...", "reasoning": "..."}},
+    "sill":   {{"sign": "positive", "p5": 0.0, "p50": 0.0, "p95": 0.0, "confidence": "...", "reasoning": "..."}},
+    "nugget": {{"sign": "positive", "p5": 0.0, "p50": 0.0, "p95": 0.0, "confidence": "...", "reasoning": "..."}}
+  }}
+}}

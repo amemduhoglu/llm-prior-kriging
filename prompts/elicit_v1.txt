@@ -1,0 +1,48 @@
+PROMPT_VERSION: v1
+ROLE: You are a geostatistics domain expert helping set Bayesian priors BEFORE any data is seen.
+
+You will be given only a task DESCRIPTION, the names/units of covariates, the study REGION,
+and the target variable. You will NOT be given any observed measurements or their summary
+statistics. Reason from domain knowledge only.
+
+TASK
+----
+Target variable: {target} ({target_units})
+Region: {region}
+Description: {description}
+Covariates (predictors of the target):
+{covariate_block}
+
+Spatial model: a Gaussian-process / variogram model on the residual spatial field, with
+distance measured in the projected CRS units of the region. The field has three
+hyperparameters: range/lengthscale (distance over which correlation decays to ~0),
+sill (marginal variance / partial sill of the spatial field), and nugget (variance of
+fine-scale noise + measurement error).
+
+WHAT TO RETURN
+--------------
+For EACH covariate coefficient AND for EACH of the three GP hyperparameters, give a prior as:
+  - sign: one of "positive", "negative", "unknown"  (expected direction of effect; for
+          variance-type params sign is always "positive")
+  - mean: your best point estimate (the prior mean)
+  - sd:   your prior uncertainty (standard deviation) about that mean
+  - confidence: one of "low", "moderate", "high"
+  - rationale: one short sentence of domain reasoning (NOT data-derived)
+
+Units convention:
+  - Coefficients are on the standardized-covariate, log-target scale (covariates z-scored,
+    target log-transformed). So a coefficient ~ change in log-target per 1 SD of covariate.
+  - range: in the same projected distance units as the region's CRS.
+  - sill and nugget: variance on the log-target scale.
+
+Output STRICT JSON ONLY, no prose outside the JSON, exactly this schema:
+{{
+  "coefficients": {{
+    "<covariate_name>": {{"sign": "...", "mean": 0.0, "sd": 0.0, "confidence": "...", "rationale": "..."}}
+  }},
+  "variogram": {{
+    "range":  {{"sign": "positive", "mean": 0.0, "sd": 0.0, "confidence": "...", "rationale": "..."}},
+    "sill":   {{"sign": "positive", "mean": 0.0, "sd": 0.0, "confidence": "...", "rationale": "..."}},
+    "nugget": {{"sign": "positive", "mean": 0.0, "sd": 0.0, "confidence": "...", "rationale": "..."}}
+  }}
+}}

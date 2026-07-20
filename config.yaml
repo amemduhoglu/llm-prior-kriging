@@ -1,0 +1,201 @@
+# config.yaml — single source of truth for the LLM-prior geostatistics experiment.
+# Defines datasets, density levels, seeds, prior conditions, elicitation model tiers,
+# predictors, and run order. All seeds are fixed here; runs are reproducible from this file.
+
+project:
+  name: llm-prior-kriging
+  seeds: [11, 22, 33, 44, 55]      # fixed; the pilot uses five
+  output_dir: results/
+
+# ---- Data ----
+datasets:
+  pilot:
+    name: meuse                     # small; GP MCMC tractable on CPU
+    target: zinc                    # log-transformed in the pipeline
+    log_transform: true
+    covariates: [dist, elev]        # distance-to-river, elevation
+    crs: EPSG:28992
+    approx_extent_km: 4               # the Meuse flood plain is only a few km across
+    units: "zinc: mg/kg topsoil; dist: normalized 0-1 distance to Meuse river; elev: m above local datum"
+    region: "Meuse river floodplain near Stein, Limburg, Netherlands"
+    description: >
+      Topsoil heavy-metal concentrations on a ~5 km2 flood plain of the river Meuse.
+      Zinc accumulates in soil deposited by river flooding, so concentration tends to be
+      higher closer to the river and on lower-lying ground.
+  andes:                            # replication in an under-represented region (same GHCN-M file)
+    enabled: true
+    name: ghcnm
+    target: tavg
+    log_transform: false
+    covariates: [elev]
+    year: 2015
+    bbox: [-45, 0, -80, -60]        # lat0, lat1, lon0, lon1 — Andes cordillera
+    approx_extent_km: 4500
+    min_valid_months: 10
+    crs: aeqd
+    units: "tavg: degrees Celsius (annual mean of 2015 monthly station means); elev: metres above sea level"
+    region: "Andes cordillera and adjacent lowlands (Ecuador, Peru, Bolivia, Chile, Argentina)"
+    description: >
+      Annual-mean near-surface air temperature at weather stations across the Andes, a
+      high-relief South American mountain region with a sparse station network. Temperature
+      in mountains is governed mainly by the atmospheric lapse rate, so it decreases
+      strongly with station elevation; horizontal position matters far less than altitude.
+
+  prcp:                             # weak-covariate case: annual precipitation ~ elevation
+    enabled: true
+    name: ghcn_prcp
+    target: prcp
+    log_transform: true             # annual totals are right-skewed and positive
+    covariates: [elev]
+    year: 1959                      # best-covered year in bbox (1007 stations with >=10 months)
+    max_stations: 150               # deterministic cap: keeps n comparable to the temp sets and the GP tractable
+    subsample_seed: 7
+    bbox: [25, 40, 68, 105]         # same Himalaya box as `main`; only the target changes
+    approx_extent_km: 2500
+    min_valid_months: 10
+    crs: aeqd
+    units: "prcp: total annual precipitation in millimetres; elev: metres above sea level"
+    region: "Greater Himalaya, Karakoram and southern Tibetan Plateau margin (Nepal, northern India, Pakistan, southern Tibet)"
+    description: >
+      Total annual precipitation at weather stations across a high-relief Himalayan region
+      with a very sparse station network. Precipitation in mountains is shaped by monsoon
+      moisture transport, orographic uplift and rain shadows, so its relationship with
+      station elevation is complex and region-dependent rather than a simple monotone trend.
+
+  urban:                            # well-represented-region point on the covariate gradient: megalopolis temperature ~ elevation
+    enabled: true
+    name: ghcnm
+    target: tavg
+    log_transform: false
+    covariates: [elev]
+    year: 2015
+    bbox: [37, 43, -78, -70]        # US Northeast megalopolis (Boston-New York-Washington corridor)
+    max_stations: 150               # deterministic cap: thins the dense network to sparse-monitoring conditions
+    subsample_seed: 7
+    approx_extent_km: 900
+    min_valid_months: 10
+    crs: aeqd
+    units: "tavg: degrees Celsius (annual mean of 2015 monthly station means); elev: metres above sea level"
+    region: "United States Northeast megalopolis (Boston-New York-Philadelphia-Washington urban corridor and surrounding states)"
+    description: >
+      Annual-mean near-surface air temperature at weather stations across the United States
+      Northeast megalopolis, the canonical chain of contiguous metropolitan areas running from
+      Boston through New York and Philadelphia to Washington. The network monitors a dense,
+      highly urbanised city-system relevant to urban heat-risk and infrastructure planning;
+      here it is thinned to sparse-network conditions. Temperature decreases with station
+      elevation through the atmospheric lapse rate, though the region's modest relief makes
+      that elevation control weaker than in high mountains.
+
+  main:                             # data-sparse real case: temperature ~ elevation
+    enabled: true
+    name: ghcnm
+    target: tavg                    # annual-mean near-surface air temperature (degC)
+    log_transform: false            # temperature can be negative; no log
+    covariates: [elev]              # station elevation (m); strong lapse-rate signal
+    year: 2015                      # static spatial field: annual mean of monthly station means
+    bbox: [25, 40, 68, 105]         # lat0, lat1, lon0, lon1 — Greater Himalaya / Karakoram / S Tibet
+    approx_extent_km: 2500          # region spans a few thousand km
+    min_valid_months: 10            # require >=10 monthly values to form an annual mean
+    crs: aeqd                       # project lon/lat to metres via Azimuthal Equidistant (region-centred)
+    units: "tavg: degrees Celsius (annual mean of 2015 monthly station means); elev: metres above sea level"
+    region: "Greater Himalaya, Karakoram and southern Tibetan Plateau margin (Nepal, northern India, Pakistan, southern Tibet)"
+    description: >
+      Annual-mean near-surface air temperature at mountain weather stations across a
+      high-relief Himalayan region with a very sparse station network. Temperature in
+      mountains is governed mainly by the atmospheric lapse rate, so it decreases strongly
+      with station elevation; horizontal position matters far less than altitude.
+
+# ---- Experimental knobs ----
+experiment:
+  density_levels: [10, 25, 50, 100] # % of observations retained
+  spatial_cv: {kind: blocked_kfold, k: 5}   # spatial blocked CV only; never random CV
+  prior_conditions:
+    minimal: [vague, llm_both]
+    full:    [vague, llm_coef, llm_variogram, llm_both, pc_range, hybrid]
+    # pc_range: principled PC-prior range baseline (LLM-free, runs like vague).
+    # hybrid: LLM coefficient prior combined with the PC-prior range.
+    rigor:   [pc_range, hybrid]
+  mcmc: {chains: 2, tune: 1000, draws: 1000, target_accept: 0.9, cores: 1}
+
+metrics: [rmse, mae, crps, pit, coverage90, interval_width]
+
+# ---- Models that ELICIT priors ----
+# Local Ollama tiers, ordered smallest-first.
+elicitation:
+  temperature: 0.2                  # low; resampled across phrasings for the robustness check
+  phrasings: 5                      # robustness/sensitivity probe
+  leakage_guard: true               # prompt uses description + covariate names + region + units only
+  request_timeout_s: 600            # generous timeout for large local models
+  max_retries: 2
+
+  local_small:                      # smallest local tier
+    - {family: qwen, tag: "qwen3.5:4b", role: small}
+  local_sweep:                      # size ablation
+    - {family: qwen, tag: "qwen3.5:9b",      role: medium}
+    - {family: qwen, tag: "qwen3.5:27b",     role: large}
+    - {family: qwen, tag: "qwen3.6:35b-a3b", role: large_moe}
+
+  local_gemma:                      # cross-family check (stability across models): full gemma4 family
+    - {family: gemma, tag: "gemma4:e2b", role: small_moe}
+    - {family: gemma, tag: "gemma4:e4b", role: medium_moe}
+    - {family: gemma, tag: "gemma4:12b", role: mid_dense}
+    - {family: gemma, tag: "gemma4:26b", role: large_dense}
+    - {family: gemma, tag: "gemma4:31b", role: xlarge_dense}
+  local_gemma_new:                  # the two not yet elicited (12b, 31b)
+    - {family: gemma, tag: "gemma4:12b", role: mid_dense}
+    - {family: gemma, tag: "gemma4:31b", role: xlarge_dense}
+
+  # Curated coef/variogram/both ablation spanning both families. qwen3.5:9b gives a correct
+  # coefficient but a far-too-short range, which isolates the variogram prior as the culprit;
+  # qwen3.6:35b and gemma4:31b are the best per family; gemma4:e2b marks the capability floor.
+  local_ablation:
+    - {family: qwen,  tag: "qwen3.5:9b",      role: medium}
+    - {family: qwen,  tag: "qwen3.6:35b-a3b", role: large_moe}
+    - {family: gemma, tag: "gemma4:31b",      role: xlarge_dense}
+    - {family: gemma, tag: "gemma4:e2b",      role: small_moe}
+
+  phrasings_frontier: 3             # frontier spread-check (the local tiers already establish stability)
+
+  # Frontier ceiling via OpenRouter (needs OPENROUTER_API_KEY). One flagship per vendor for
+  # vendor diversity plus a capability ceiling; the size gradient is covered by the local tiers.
+  frontier_openrouter:
+    - {provider: openrouter, family: anthropic, tag: "anthropic/claude-opus-4.8", role: frontier}
+    - {provider: openrouter, family: openai,    tag: "openai/gpt-5.5",            role: frontier}
+    - {provider: openrouter, family: google,    tag: "google/gemini-3.1-pro-preview", role: frontier}
+
+  # Open-weight-via-API tier: a lineage x scale grid served through OpenRouter, isolating
+  # capability-from-scale/recipe from capability-from-being-a-closed-API. Lineages absent from
+  # both the local zoo (Qwen/Gemma) and the frontier tier (Anthropic/OpenAI/Google):
+  #   DeepSeek  : pro (large) + flash (mid)                  -> scale axis, lineage A
+  #   Nemotron3 : nano -> super -> ultra                     -> 3-rung scale ladder, one recipe, lineage B
+  #   GLM-5.1   : a third large lineage                      -> robustness, lineage C
+  # The nano rung (~the 31B local ceiling) tests whether the local short-range behaviour is a
+  # scale or a training limit; the super (120B) rung fills the gap to frontier scale.
+  frontier_openweight:
+    - {provider: openrouter, family: deepseek, tag: "deepseek/deepseek-v4-pro",   role: openweight_large}   # 1.6T/49B-active
+    - {provider: openrouter, family: deepseek, tag: "deepseek/deepseek-v4-flash", role: openweight_mid}     # 284B/13B-active
+    - {provider: openrouter, family: nvidia,   tag: "nvidia/nemotron-3-nano-30b-a3b",     role: openweight_small}  # 30B/3B-active
+    - {provider: openrouter, family: nvidia,   tag: "nvidia/nemotron-3-super-120b-a12b",  role: openweight_mid}    # 120B/12B-active
+    - {provider: openrouter, family: nvidia,   tag: "nvidia/nemotron-3-ultra-550b-a55b",  role: openweight_large}  # 550B/55B-active
+    - {provider: openrouter, family: zai,      tag: "z-ai/glm-5.1",               role: openweight_large}   # robustness lineage
+
+  # Precision control: isolates the quantization confound from capability. The local sweep is
+  # primary (same weights/engine, only the quant level changes); the OpenRouter twins are a
+  # secondary cross-engine check. qwen3.5:9b returns a short range locally at Q4_K_M (~7 km vs a
+  # ~2500 km domain); if higher precision keeps the short range, quantization is not the cause.
+  quant_sweep:
+    - {family: qwen, tag: "qwen3.5:9b",      role: q4km}   # default Ollama tag = Q4_K_M (baseline)
+    - {family: qwen, tag: "qwen3.5:9b-q8_0", role: q8}      # 8-bit
+    - {family: qwen, tag: "qwen3.5:9b-bf16", role: bf16}    # full precision
+
+  # OpenRouter full-precision twins (secondary). OpenRouter routes across providers at mixed
+  # quant, so bf16 is pinned via provider routing for a valid control; qwen3.6-35b-a3b has no
+  # bf16 endpoint and is excluded.
+  precision_control:
+    - {provider: openrouter, family: qwen,  tag: "qwen/qwen3.5-9b",           role: fp_twin, quantization: bf16}  # vs local qwen3.5:9b (~7 km range)
+    - {provider: openrouter, family: qwen,  tag: "qwen/qwen3.5-27b",          role: fp_twin, quantization: bf16}  # vs local qwen3.5:27b (~140 km)
+    - {provider: openrouter, family: gemma, tag: "google/gemma-4-31b-it",     role: fp_twin, quantization: bf16}  # vs local gemma4:31b (~400 km)
+    - {provider: openrouter, family: gemma, tag: "google/gemma-4-26b-a4b-it", role: fp_twin, quantization: bf16}  # vs local gemma4:26b (~100 km)
+
+# ---- Predictive models (NOT language models) ----
+predictors: [ordinary_kriging, regression_kriging, bayesian_kriging, rf_residual_kriging]
