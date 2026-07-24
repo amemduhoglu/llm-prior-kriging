@@ -33,6 +33,27 @@ prior-conditioned Bayesian model, spatial cross-validation, metrics, and the kno
 simulation. The `eval` stage writes `results/summary.csv` and basic metric-vs-density
 plots; the figures and tables in the paper are produced separately and are not included.
 
+## Requirements
+
+- Python 3.12 (any 3.10+ works), the packages in `requirements.txt`.
+- [Ollama](https://ollama.com) running locally for the local open-weight tiers; the model
+  tags in `config.yaml` must be pulled first (`ollama pull qwen3.5:9b`).
+- `OPENROUTER_API_KEY` in the environment for the API-served tiers
+  (`frontier_openrouter`, `frontier_openweight`, `precision_control`). No key is needed
+  for the local tiers or for any stage that does not elicit.
+
+## Data
+
+No data files are shipped. Each loader in `data.py` downloads and caches its source once
+into `data/raw/`:
+
+- Meuse pilot: `meuse.rda` from the CRAN `sp` package.
+- Temperature networks: GHCN-M v4 (`ghcnm.tavg.latest.qcu.tar.gz`, NOAA NCEI).
+- Precipitation network: GHCN v2 annual totals (NOAA NCEI).
+
+Station selection (bounding box, target year, minimum valid months, station cap) is
+defined per dataset in `config.yaml`, so a network is reproducible from source.
+
 ## Reproducibility
 
 `config.yaml` is the single source of truth for datasets, density levels, seeds, prior
@@ -86,6 +107,23 @@ python src/sim.py --config config.yaml
 Stages are independent and checkpointed per cell, so an interrupted run resumes where it
 stopped. Available dataset names, model tiers, prior conditions, and density levels are
 all defined in `config.yaml`.
+
+## Outputs
+
+Everything is written under `results/` (set by `project.output_dir`):
+
+- `elicit/<tier>/<model>/`: `phrasing_<k>.json` (raw model text plus the parsed spec and
+  status, one per phrasing) and `consensus.json`, the pooled prior the `bayes` stage reads.
+- `cells/`: one JSON per fitted cell (dataset, density, seed, fold, condition, model),
+  written the instant it finishes and skipped on a re-run.
+- `cells_long.csv` and `summary.csv`: the per-cell and aggregated metric-versus-density
+  tables written by the `eval` stage (RMSE, MAE, CRPS, PIT, 90% coverage, interval width).
+- `sim/cells/`: the known-truth range-misspecification results from `sim.py`.
+
+## Citation
+
+Memduhoğlu, A., Duman, H. LLM-elicited priors for Bayesian geostatistical prediction in
+data-sparse networks: a controlled evaluation.
 
 ## License
 
