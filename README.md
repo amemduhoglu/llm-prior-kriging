@@ -1,13 +1,20 @@
-# LLM-elicited priors for geostatistical prediction
+# Trend and covariance priors for sparse-network Bayesian kriging
 
-Methodology code for the study on whether priors elicited from large language models
-(LLMs) improve Bayesian geostatistical prediction in data-sparse regions, compared
-with the same model under vague priors and with classical kriging.
+Methodology code for a study of what the prior is worth in Bayesian regression kriging
+when the network is sparse, and of whether a language model can supply one. Data,
+likelihood and sampler are held fixed and only the prior block changes, which is what
+isolates the prior's contribution.
 
-The LLM supplies, from a task description alone (no observed data), prior distributions
-for (i) covariate coefficients and (ii) variogram / Gaussian-process hyperparameters
-(range, sill, nugget). The Bayesian model is held identical across prior conditions;
-only the priors change, which isolates the contribution of the elicited priors.
+Seven prior conditions are supported. Four take elicited values: for the trend
+coefficients, for the covariance hyperparameters (range, sill, nugget), for both, and
+for the trend with a principled covariance default. Three contain no language model:
+the vague reference, a penalized-complexity range prior, and a zero-centred trend prior
+at unit-information width, the control that separates shrinkage towards zero from what
+an elicited prior states.
+
+A large language model supplies the elicited values from a task description alone:
+region, target and covariate names with units, never an observed value or a summary of
+one. A guard enforces that, and every raw response is logged.
 
 ## Repository layout
 
@@ -22,7 +29,7 @@ src/
   metrics.py           RMSE / MAE / CRPS / PIT / interval coverage
   run.py               experiment driver (reads config.yaml)
   sim.py               known-truth range-misspecification simulation
-  theory.py            closed-form trend-prior weight and help condition
+  theory.py            prior weight and the help condition for a Normal trend prior
   theory_check.py      applies the help condition to the networks' training folds
 prompts/               the two elicitation templates, exactly as sent (v2 point estimates,
                        v3 quantiles after a physical decomposition of the range)
@@ -134,8 +141,8 @@ Everything is written under `results/` (set by `project.output_dir`):
 
 ## Citation
 
-Memduhoğlu, A., Duman, H. Trend and covariance-range priors for Bayesian regression kriging
-in sparse networks: a controlled evaluation of language-model elicitation.
+Memduhoğlu, A., Duman, H. Trend and covariance priors for sparse-network Bayesian kriging
+from language-model elicitation. Under review.
 
 ## License
 
