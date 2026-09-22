@@ -22,7 +22,10 @@ src/
   metrics.py           RMSE / MAE / CRPS / PIT / interval coverage
   run.py               experiment driver (reads config.yaml)
   sim.py               known-truth range-misspecification simulation
-prompts/               versioned elicitation templates (elicit_v1..v3)
+  theory.py            closed-form trend-prior weight and help condition
+  theory_check.py      applies the help condition to the networks' training folds
+prompts/               the two elicitation templates, exactly as sent (v2 point estimates,
+                       v3 quantiles after a physical decomposition of the range)
 config.yaml            single source of truth: datasets, density levels, seeds,
                        prior conditions, model tiers
 requirements.txt       Python dependencies
@@ -30,7 +33,7 @@ requirements.txt       Python dependencies
 
 This repository is the methodology pipeline only: data retrieval, elicitation, the
 prior-conditioned Bayesian model, spatial cross-validation, metrics, and the known-truth
-simulation. The `eval` stage writes `results/summary.csv` and basic metric-vs-density
+simulation, and the closed-form check of the trend prior. The `eval` stage writes `results/summary.csv` and basic metric-vs-density
 plots; the figures and tables in the paper are produced separately and are not included.
 
 ## Requirements
@@ -80,7 +83,7 @@ python src/elicit.py --config config.yaml --tier local_small --dataset main
 
 # 3. fit the Bayesian model under each prior condition (model held identical)
 python src/run.py    --config config.yaml --stage bayes --dataset main \
-                     --priors vague,llm_coef,llm_variogram,llm_both,pc_range,hybrid \
+                     --priors vague,llm_coef,llm_variogram,llm_both,pc_range,hybrid,shrink_zero \
                      --models local_small
 
 # 4. evaluate: metrics vs. density for all conditions (writes results/summary.csv)
@@ -104,6 +107,13 @@ The known-truth range-misspecification simulation runs on its own:
 python src/sim.py --config config.yaml
 ```
 
+The closed-form trend-prior check reads the elicited coefficient priors and, once the
+`bayes` and `eval` stages have run, compares its predicted RMSE ratios with the observed ones:
+
+```bash
+python src/theory_check.py --config config.yaml
+```
+
 Stages are independent and checkpointed per cell, so an interrupted run resumes where it
 stopped. Available dataset names, model tiers, prior conditions, and density levels are
 all defined in `config.yaml`.
@@ -118,12 +128,14 @@ Everything is written under `results/` (set by `project.output_dir`):
   written the instant it finishes and skipped on a re-run.
 - `cells_long.csv` and `summary.csv`: the per-cell and aggregated metric-versus-density
   tables written by the `eval` stage (RMSE, MAE, CRPS, PIT, 90% coverage, interval width).
-- `sim/cells/`: the known-truth range-misspecification results from `sim.py`.
+- `sim/cells/`: the known-truth range-misspecification results from `sim.py`, with the
+  held-out metrics and posterior quantiles of the range, sill, nugget and microergodic
+  parameter for each fit.
 
 ## Citation
 
-Memduhoğlu, A., Duman, H. LLM-elicited priors for Bayesian geostatistical prediction in
-data-sparse networks: a controlled evaluation.
+Memduhoğlu, A., Duman, H. Trend and covariance-range priors for Bayesian regression kriging
+in sparse networks: a controlled evaluation of language-model elicitation.
 
 ## License
 

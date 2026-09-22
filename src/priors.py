@@ -12,16 +12,20 @@ is the whole experiment, so the four conditions differ only in which blocks belo
                    the LLM-free, domain-scaled baseline against which llm_variogram is judged.
   hybrid         : informed coefficients (LLM) + PC-prior variogram; the recommended
                    division of labour — elicit the trend, let a principled default set the range.
+  shrink_zero    : LLM-free zero-centred coefficient prior at unit-information width, with the
+                   vague variogram block; the control that separates "shrink the slope" from
+                   "shrink it to the elicited value and width".
 """
 from __future__ import annotations
 import numpy as np
 import pymc as pm
 
-CONDITIONS = ("vague", "llm_coef", "llm_variogram", "llm_both", "pc_range", "hybrid")
+CONDITIONS = ("vague", "llm_coef", "llm_variogram", "llm_both", "pc_range", "hybrid",
+              "shrink_zero")
 
 # Conditions that need NO elicited spec (no LLM model attached); orchestration treats them
 # like `vague` — a single "none" model, spec=None.
-NO_LLM_CONDITIONS = ("vague", "pc_range")
+NO_LLM_CONDITIONS = ("vague", "pc_range", "shrink_zero")
 # Conditions whose variogram block uses the principled PC prior instead of LLM/vague.
 PC_VARIO_CONDITIONS = ("pc_range", "hybrid")
 # Conditions whose coefficient block is informed by the LLM.
@@ -91,6 +95,11 @@ def build_priors(condition: str, spec: dict | None, *, n_cov: int, covariates: l
             mus.append(float(e.get("mean", 0.0)) * x_sd[i])
             sds.append(max(float(e.get("sd", 1.0)) * x_sd[i] * width_scale, 1e-3))
         betas = pm.Normal("betas", mu=np.array(mus), sigma=np.array(sds), shape=n_cov)
+    elif condition == "shrink_zero":
+        # Data-free control: covariates are z-scored, so sd(y) is the unit-information width
+        # (a one-sd covariate change moves the mean by at most about one sd of y). It separates
+        # "shrink the slope" from "shrink it to the elicited value and width".
+        betas = pm.Normal("betas", mu=0.0, sigma=y_scale, shape=n_cov)
     else:
         betas = pm.Normal("betas", mu=0.0, sigma=10.0, shape=n_cov)
 

@@ -74,5 +74,6 @@ def _validate(d: dict):
     pilot = d["datasets"]["pilot"]
     for k in ("name", "target", "covariates", "crs"):
         assert k in pilot, f"config: pilot.{k} missing"
-    assert d["experiment"]["spatial_cv"]["kind"] != "random", "RANDOM CV FORBIDDEN (autocorr leak)"
+    assert "random" not in str(d["experiment"]["spatial_cv"]["kind"]).lower(), \
+        "RANDOM CV FORBIDDEN (autocorr leak)"
     assert "elicitation" in d, "config: elicitation missing"

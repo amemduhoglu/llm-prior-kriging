@@ -45,6 +45,24 @@ def _matern52(d, ls):
     return (1 + a + a * a / 3.0) * np.exp(-a)
 
 
+def log_kappa(ls, eta2, nu=2.5):
+    """Log microergodic parameter eta2 * (sqrt(2 nu) / ls)^(2 nu): under in-fill asymptotics
+    the only Matern combination the data identify, so a pinned range can still predict well
+    if the variance moves to restore it."""
+    return np.log(eta2) + 2 * nu * (0.5 * np.log(2 * nu) - np.log(ls))
+
+
+def posterior_summary(draws):
+    """5/50/95% posterior quantiles of ls, eta2, sigma2 and log_kappa from flat draw arrays."""
+    arrays = dict(draws)
+    arrays["log_kappa"] = log_kappa(np.asarray(draws["ls"]), np.asarray(draws["eta2"]))
+    out = {}
+    for name in ("ls", "eta2", "sigma2", "log_kappa"):
+        lo, med, hi = np.quantile(np.asarray(arrays[name]), [0.05, 0.5, 0.95])
+        out.update({f"{name}_lo": float(lo), f"{name}_med": float(med), f"{name}_hi": float(hi)})
+    return out
+
+
 def simulate_field(rng, n_total):
     """Sample coords + one realisation of the true GP (+ nugget noise)."""
     coords = rng.uniform(0, DOMAIN_M, size=(n_total, 2))
@@ -79,12 +97,16 @@ def fit_predict(coords_tr, y_tr, coords_te, prior_kind, range_center, seed):
         ppc = pm.sample_posterior_predictive(idata, var_names=["y_pred"],
                                              random_seed=seed, progressbar=False)
     arr = ppc.posterior_predictive["y_pred"].values.reshape(-1, len(coords_te))
-    return arr.mean(0), arr.std(0)
+    post = idata.posterior
+    summ = posterior_summary({k: post[k].values.ravel() for k in ("ls", "eta2", "sigma2")})
+    return arr.mean(0), arr.std(0), summ
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", default="config.yaml")
+    ap.add_argument("--only-n", type=int, default=None, help="restrict to one sample size")
+    ap.add_argument("--only-rep", type=int, default=None, help="restrict to one replicate")
     a = ap.parse_args()
     cfg = cfgmod.load(a.config)
     cells = cfg.output_dir / "sim" / "cells"
@@ -92,7 +114,11 @@ def main():
 
     conditions = [("vague", None)] + [("ratio", r) for r in RATIOS]
     for n_obs in N_OBS:
+        if a.only_n is not None and n_obs != a.only_n:
+            continue
         for rep in range(N_REPS):
+            if a.only_rep is not None and rep != a.only_rep:
+                continue
             rng = np.random.default_rng(1000 * n_obs + rep)
             coords, y = simulate_field(rng, n_obs + N_TEST)
             tr = slice(0, n_obs); te = slice(n_obs, None)
@@ -107,9 +133,11 @@ def main():
                            true_range=TRUE_RANGE, prior_log_sd=PRIOR_LOG_SD)
                 try:
                     center = None if ratio is None else ratio * TRUE_RANGE
-                    mu, sd = fit_predict(coords[tr], y[tr], coords[te], kind, center,
-                                         seed=rep)
+                    mu, sd, summ = fit_predict(coords[tr], y[tr], coords[te], kind, center,
+                                               seed=rep)
                     row.update(metricsmod.all_metrics(y[te], mu, sd))
+                    row.update(summ)
+                    row["log_kappa_true"] = float(log_kappa(TRUE_RANGE, TRUE_SILL))
                     row["status"] = "ok"
                 except Exception as e:
                     row["status"] = f"error:{e}"

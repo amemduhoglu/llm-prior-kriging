@@ -4,7 +4,8 @@ names/units, region, and target units. NEVER observed values or their summaries 
 Output per model:
   results/elicit/<safe_tag>/phrasing_<k>.json   raw text + parsed spec + status
   results/elicit/<safe_tag>/consensus.json       aggregated spec used by the bayes stage
-Every prompt is versioned (prompts/elicit_v1.txt). Raw responses are always logged.
+Every prompt is versioned (prompts/elicit_v2.txt, prompts/elicit_v3.txt). Raw responses
+are always logged.
 """
 from __future__ import annotations
 import argparse

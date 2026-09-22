@@ -110,14 +110,15 @@ experiment:
   density_levels: [10, 25, 50, 100] # % of observations retained
   spatial_cv: {kind: blocked_kfold, k: 5}   # spatial blocked CV only; never random CV
   prior_conditions:
-    minimal: [vague, llm_both]
-    full:    [vague, llm_coef, llm_variogram, llm_both, pc_range, hybrid]
+    # The full set the study reports; --priors takes any comma-separated subset of it.
     # pc_range: principled PC-prior range baseline (LLM-free, runs like vague).
     # hybrid: LLM coefficient prior combined with the PC-prior range.
-    rigor:   [pc_range, hybrid]
+    # shrink_zero: LLM-free zero-centred coefficient prior at unit-information width; the
+    # control that separates "shrink the slope" from what the elicited prior states.
+    full: [vague, llm_coef, llm_variogram, llm_both, pc_range, hybrid, shrink_zero]
   mcmc: {chains: 2, tune: 1000, draws: 1000, target_accept: 0.9, cores: 1}
 
-metrics: [rmse, mae, crps, pit, coverage90, interval_width]
+metrics: [rmse, mae, crps, pit_ks, coverage90, interval_width]
 
 # ---- Models that ELICIT priors ----
 # Local Ollama tiers, ordered smallest-first.
@@ -140,9 +141,6 @@ elicitation:
     - {family: gemma, tag: "gemma4:e4b", role: medium_moe}
     - {family: gemma, tag: "gemma4:12b", role: mid_dense}
     - {family: gemma, tag: "gemma4:26b", role: large_dense}
-    - {family: gemma, tag: "gemma4:31b", role: xlarge_dense}
-  local_gemma_new:                  # the two not yet elicited (12b, 31b)
-    - {family: gemma, tag: "gemma4:12b", role: mid_dense}
     - {family: gemma, tag: "gemma4:31b", role: xlarge_dense}
 
   # Curated coef/variogram/both ablation spanning both families. qwen3.5:9b gives a correct
