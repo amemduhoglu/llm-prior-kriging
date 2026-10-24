@@ -28,6 +28,8 @@ datasets:
     target: tavg
     log_transform: false
     covariates: [elev]
+    # textbook_coef: LLM-free trend prior, the standard-atmosphere lapse rate (6.5 K/km)
+    textbook_prior: {elev: {mean: -0.0065, sd: 0.0015}}
     year: 2015
     bbox: [-45, 0, -80, -60]        # lat0, lat1, lon0, lon1 — Andes cordillera
     approx_extent_km: 4500
@@ -40,8 +42,12 @@ datasets:
       high-relief South American mountain region with a sparse station network. Temperature
       in mountains is governed mainly by the atmospheric lapse rate, so it decreases
       strongly with station elevation; horizontal position matters far less than altitude.
+    # v2n: the description without its statement of the target-covariate relation
+    description_neutral: >
+      Annual-mean near-surface air temperature at weather stations across the Andes, a 
+      high-relief South American mountain region with a sparse station network.
 
-  prcp:                             # weak-covariate case: annual precipitation ~ elevation
+  prcp: &prcp                       # weak-covariate case: annual precipitation ~ elevation
     enabled: true
     name: ghcn_prcp
     target: prcp
@@ -61,6 +67,17 @@ datasets:
       with a very sparse station network. Precipitation in mountains is shaped by monsoon
       moisture transport, orographic uplift and rain shadows, so its relationship with
       station elevation is complex and region-dependent rather than a simple monotone trend.
+    # v2n: the description without its statement of the target-covariate relation
+    description_neutral: >
+      Total annual precipitation at weather stations across a high-relief Himalayan region 
+      with a very sparse station network.
+
+  # replication years of the precipitation network; the prompt names no year, so each year
+  # reuses the prcp elicitation (link results/elicit/prcp1960 -> prcp)
+  prcp1960: {<<: *prcp, year: 1960}
+  prcp1958: {<<: *prcp, year: 1958}
+  prcp1957: {<<: *prcp, year: 1957}
+  prcp1956: {<<: *prcp, year: 1956}
 
   urban:                            # well-represented-region point on the covariate gradient: megalopolis temperature ~ elevation
     enabled: true
@@ -68,6 +85,8 @@ datasets:
     target: tavg
     log_transform: false
     covariates: [elev]
+    # textbook_coef: LLM-free trend prior, the standard-atmosphere lapse rate (6.5 K/km)
+    textbook_prior: {elev: {mean: -0.0065, sd: 0.0015}}
     year: 2015
     bbox: [37, 43, -78, -70]        # US Northeast megalopolis (Boston-New York-Washington corridor)
     max_stations: 150               # deterministic cap: thins the dense network to sparse-monitoring conditions
@@ -85,6 +104,13 @@ datasets:
       here it is thinned to sparse-network conditions. Temperature decreases with station
       elevation through the atmospheric lapse rate, though the region's modest relief makes
       that elevation control weaker than in high mountains.
+    # v2n: the description without its statement of the target-covariate relation
+    description_neutral: >
+      Annual-mean near-surface air temperature at weather stations across the United States 
+      Northeast megalopolis, the canonical chain of contiguous metropolitan areas running 
+      from Boston through New York and Philadelphia to Washington. The network monitors a 
+      dense, highly urbanised city-system relevant to urban heat-risk and infrastructure 
+      planning; here it is thinned to sparse-network conditions.
 
   main:                             # data-sparse real case: temperature ~ elevation
     enabled: true
@@ -92,6 +118,8 @@ datasets:
     target: tavg                    # annual-mean near-surface air temperature (degC)
     log_transform: false            # temperature can be negative; no log
     covariates: [elev]              # station elevation (m); strong lapse-rate signal
+    # textbook_coef: LLM-free trend prior, the standard-atmosphere lapse rate (6.5 K/km)
+    textbook_prior: {elev: {mean: -0.0065, sd: 0.0015}}
     year: 2015                      # static spatial field: annual mean of monthly station means
     bbox: [25, 40, 68, 105]         # lat0, lat1, lon0, lon1 — Greater Himalaya / Karakoram / S Tibet
     approx_extent_km: 2500          # region spans a few thousand km
@@ -104,6 +132,10 @@ datasets:
       high-relief Himalayan region with a very sparse station network. Temperature in
       mountains is governed mainly by the atmospheric lapse rate, so it decreases strongly
       with station elevation; horizontal position matters far less than altitude.
+    # v2n: the description without its statement of the target-covariate relation
+    description_neutral: >
+      Annual-mean near-surface air temperature at mountain weather stations across a 
+      high-relief Himalayan region with a very sparse station network.
 
 # ---- Experimental knobs ----
 experiment:
@@ -116,6 +148,9 @@ experiment:
     # shrink_zero: LLM-free zero-centred coefficient prior at unit-information width; the
     # control that separates "shrink the slope" from what the elicited prior states.
     full: [vague, llm_coef, llm_variogram, llm_both, pc_range, hybrid, shrink_zero]
+    # textbook_coef: textbook trend prior (temperature networks only); zero_matched: the
+    # elicited trend width with a zero centre (does the gain come from the centre or the width?)
+    trend_controls: [textbook_coef, zero_matched]
   mcmc: {chains: 2, tune: 1000, draws: 1000, target_accept: 0.9, cores: 1}
 
 metrics: [rmse, mae, crps, pit_ks, coverage90, interval_width]

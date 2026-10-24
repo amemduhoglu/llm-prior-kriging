@@ -4,8 +4,8 @@ names/units, region, and target units. NEVER observed values or their summaries 
 Output per model:
   results/elicit/<safe_tag>/phrasing_<k>.json   raw text + parsed spec + status
   results/elicit/<safe_tag>/consensus.json       aggregated spec used by the bayes stage
-Every prompt is versioned (prompts/elicit_v2.txt, prompts/elicit_v3.txt). Raw responses
-are always logged.
+Every prompt is versioned (prompts/elicit_v2.txt, prompts/elicit_v3.txt; v2n reuses the v2
+template). Raw responses are always logged.
 """
 from __future__ import annotations
 import argparse
@@ -23,12 +23,15 @@ from priors import validate_spec
 # Two structurally different elicitation protocols (robustness against "bad prompt"):
 #   v2 — point estimate + sd per parameter (default; all existing results)
 #   v3 — p5/p50/p95 quantiles + forced physical-process decomposition before numbers
-PROTOCOLS = ("v2", "v3")
+#   v2n — the v2 template with the dataset's `description_neutral`, which states no direction
+#         or form of the target-covariate relation
+PROTOCOLS = ("v2", "v3", "v2n")
+_TEMPLATE = {"v2n": "v2"}   # protocols that reuse another protocol's template
 DEFAULT_PROTOCOL = "v2"
 
 
 def _prompt_file(protocol: str) -> Path:
-    return cfgmod.ROOT / "prompts" / f"elicit_{protocol}.txt"
+    return cfgmod.ROOT / "prompts" / f"elicit_{_TEMPLATE.get(protocol, protocol)}.txt"
 
 # 5 phrasing wrappers for the H4 robustness probe — wording only, same information.
 PHRASINGS = [
@@ -77,7 +80,9 @@ def build_prompt(cfg, phrasing: str, which: str = "pilot", protocol: str = DEFAU
         target=tgt,
         target_units=p.get("units", "unspecified"),
         region=p.get("region", "unspecified"),
-        description=" ".join(str(p.get("description", "")).split()),
+        # v2n indexes its field so a dataset without a neutral text raises, never falls back
+        description=" ".join(str(p["description_neutral"] if protocol == "v2n"
+                                 else p.get("description", "")).split()),
         covariate_block="\n".join(f"  - {c}" for c in p["covariates"]),
         target_scale_note=scale_note,
         distance_note=dist_note,
@@ -124,7 +129,7 @@ def _normalize_spec(parsed: dict, protocol: str) -> dict | None:
     space — sigma_log = (ln p95 - ln p5)/3.29, mu_log = ln p50 — then converted to the
     moment (mean, sd) parameterization that priors.py expects.
     """
-    if protocol == "v2" or parsed is None:
+    if _TEMPLATE.get(protocol, protocol) == "v2" or parsed is None:
         return parsed
     try:
         out = {"coefficients": {}, "variogram": {}}
@@ -330,7 +335,7 @@ def main():
     ap.add_argument("--config", default="config.yaml")
     ap.add_argument("--tier", default="local_small")
     ap.add_argument("--dataset", default="pilot",
-                    choices=["pilot", "main", "andes", "prcp", "urban"])
+                    help="a key under datasets: in config.yaml")
     ap.add_argument("--protocol", default=DEFAULT_PROTOCOL, choices=list(PROTOCOLS))
     a = ap.parse_args()
     cfg = cfgmod.load(a.config)

@@ -38,6 +38,19 @@ RATIOS = [0.01, 0.03, 0.1, 0.3, 1.0, 3.0, 10.0, 100.0]   # prior centre / true r
 PRIOR_LOG_SD = 0.3              # the tight sd of a "high confidence" elicitation
 N_REPS = 12
 MCMC = dict(draws=500, tune=500, chains=2, cores=1, target_accept=0.9)
+# "wide" variance prior: LogNormal(log sd(y)^2, 3), loose enough for the variance to follow a
+# misplaced range, so whether the nugget absorbs it is tested rather than imposed by the prior.
+WIDE_VAR_LOG_SD = 3.0
+
+
+def cell_key(n_obs, rep, kind, ratio, true_range, var_prior):
+    """Keys of the base design (150 km, HalfNormal) carry only its four factors."""
+    k = dict(n=n_obs, rep=rep, kind=kind, ratio=ratio)
+    if true_range != TRUE_RANGE:
+        k["true_range"] = true_range
+    if var_prior != "halfnormal":
+        k["var_prior"] = var_prior
+    return hashlib.md5(json.dumps(k).encode()).hexdigest()[:16]
 
 
 def _matern52(d, ls):
@@ -63,17 +76,18 @@ def posterior_summary(draws):
     return out
 
 
-def simulate_field(rng, n_total):
+def simulate_field(rng, n_total, true_range=TRUE_RANGE):
     """Sample coords + one realisation of the true GP (+ nugget noise)."""
     coords = rng.uniform(0, DOMAIN_M, size=(n_total, 2))
     d = np.linalg.norm(coords[:, None, :] - coords[None, :, :], axis=-1)
-    K = TRUE_SILL * _matern52(d, TRUE_RANGE) + np.eye(n_total) * 1e-8
+    K = TRUE_SILL * _matern52(d, true_range) + np.eye(n_total) * 1e-8
     f = rng.multivariate_normal(np.zeros(n_total), K)
     y = f + rng.normal(0, np.sqrt(TRUE_NUGGET), n_total)
     return coords, y
 
 
-def fit_predict(coords_tr, y_tr, coords_te, prior_kind, range_center, seed):
+def fit_predict(coords_tr, y_tr, coords_te, prior_kind, range_center, seed,
+                var_prior="halfnormal"):
     """Same model family as the real experiment (constant mean + Matern52 GP, marginalized);
     only the range prior differs between conditions."""
     import pymc as pm
@@ -85,7 +99,10 @@ def fit_predict(coords_tr, y_tr, coords_te, prior_kind, range_center, seed):
             ls = pm.LogNormal("ls", mu=np.log(dom / 3.0), sigma=1.0)
         else:  # confident, possibly misspecified
             ls = pm.LogNormal("ls", mu=np.log(range_center), sigma=PRIOR_LOG_SD)
-        eta2 = pm.HalfNormal("eta2", sigma=y_scale)
+        if var_prior == "wide":
+            eta2 = pm.LogNormal("eta2", mu=np.log(y_scale ** 2), sigma=WIDE_VAR_LOG_SD)
+        else:
+            eta2 = pm.HalfNormal("eta2", sigma=y_scale)
         sigma2 = pm.HalfNormal("sigma2", sigma=y_scale)
         cov = eta2 * pm.gp.cov.Matern52(2, ls=ls)
         gp = pm.gp.Marginal(mean_func=pm.gp.mean.Constant(beta0), cov_func=cov)
@@ -107,37 +124,41 @@ def main():
     ap.add_argument("--config", default="config.yaml")
     ap.add_argument("--only-n", type=int, default=None, help="restrict to one sample size")
     ap.add_argument("--only-rep", type=int, default=None, help="restrict to one replicate")
+    ap.add_argument("--true-ranges-km", default="150", help="comma list of true ranges")
+    ap.add_argument("--reps", type=int, default=N_REPS)
+    ap.add_argument("--var-prior", default="halfnormal", choices=["halfnormal", "wide"])
     a = ap.parse_args()
     cfg = cfgmod.load(a.config)
     cells = cfg.output_dir / "sim" / "cells"
     cells.mkdir(parents=True, exist_ok=True)
 
     conditions = [("vague", None)] + [("ratio", r) for r in RATIOS]
-    for n_obs in N_OBS:
+    for true_range, n_obs in ((1000.0 * float(r), n) for r in a.true_ranges_km.split(",")
+                              for n in N_OBS):
         if a.only_n is not None and n_obs != a.only_n:
             continue
-        for rep in range(N_REPS):
+        for rep in range(a.reps):
             if a.only_rep is not None and rep != a.only_rep:
                 continue
             rng = np.random.default_rng(1000 * n_obs + rep)
-            coords, y = simulate_field(rng, n_obs + N_TEST)
+            coords, y = simulate_field(rng, n_obs + N_TEST, true_range)
             tr = slice(0, n_obs); te = slice(n_obs, None)
             for kind, ratio in conditions:
-                key = hashlib.md5(json.dumps(
-                    dict(n=n_obs, rep=rep, kind=kind, ratio=ratio)).encode()).hexdigest()[:16]
+                key = cell_key(n_obs, rep, kind, ratio, true_range, a.var_prior)
                 out = cells / f"{key}.json"
                 if out.exists():
                     continue
                 t0 = time.time()
                 row = dict(n_obs=n_obs, rep=rep, condition=kind, ratio=ratio,
-                           true_range=TRUE_RANGE, prior_log_sd=PRIOR_LOG_SD)
+                           true_range=true_range, prior_log_sd=PRIOR_LOG_SD,
+                           var_prior=a.var_prior)
                 try:
-                    center = None if ratio is None else ratio * TRUE_RANGE
+                    center = None if ratio is None else ratio * true_range
                     mu, sd, summ = fit_predict(coords[tr], y[tr], coords[te], kind, center,
-                                               seed=rep)
+                                               seed=rep, var_prior=a.var_prior)
                     row.update(metricsmod.all_metrics(y[te], mu, sd))
                     row.update(summ)
-                    row["log_kappa_true"] = float(log_kappa(TRUE_RANGE, TRUE_SILL))
+                    row["log_kappa_true"] = float(log_kappa(true_range, TRUE_SILL))
                     row["status"] = "ok"
                 except Exception as e:
                     row["status"] = f"error:{e}"

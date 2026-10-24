@@ -15,21 +15,26 @@ is the whole experiment, so the four conditions differ only in which blocks belo
   shrink_zero    : LLM-free zero-centred coefficient prior at unit-information width, with the
                    vague variogram block; the control that separates "shrink the slope" from
                    "shrink it to the elicited value and width".
+  textbook_coef  : LLM-free trend prior from a textbook value in config.yaml (e.g. the standard
+                   lapse rate) with the vague covariance block.
+  zero_matched   : the elicited coefficient width with a zero centre, vague covariance; separates
+                   the stated centre from the stated width.
 """
 from __future__ import annotations
 import numpy as np
 import pymc as pm
 
 CONDITIONS = ("vague", "llm_coef", "llm_variogram", "llm_both", "pc_range", "hybrid",
-              "shrink_zero")
+              "shrink_zero", "textbook_coef", "zero_matched")
 
 # Conditions that need NO elicited spec (no LLM model attached); orchestration treats them
 # like `vague` — a single "none" model, spec=None.
-NO_LLM_CONDITIONS = ("vague", "pc_range", "shrink_zero")
+# textbook_coef carries a spec, but it comes from config.yaml, not a model.
+NO_LLM_CONDITIONS = ("vague", "pc_range", "shrink_zero", "textbook_coef")
 # Conditions whose variogram block uses the principled PC prior instead of LLM/vague.
 PC_VARIO_CONDITIONS = ("pc_range", "hybrid")
-# Conditions whose coefficient block is informed by the LLM.
-COEF_INFORMED_CONDITIONS = ("llm_coef", "llm_both", "hybrid")
+# Conditions whose coefficient block is informed by a spec (elicited, or textbook).
+COEF_INFORMED_CONDITIONS = ("llm_coef", "llm_both", "hybrid", "textbook_coef", "zero_matched")
 # Conditions whose variogram block is informed by the LLM.
 VARIO_LLM_CONDITIONS = ("llm_variogram", "llm_both")
 
@@ -92,7 +97,9 @@ def build_priors(condition: str, spec: dict | None, *, n_cov: int, covariates: l
         for i, c in enumerate(covariates):
             e = cspec.get(c, {})
             # natural-unit coefficient -> standardized-covariate scale (multiply by sd)
-            mus.append(float(e.get("mean", 0.0)) * x_sd[i])
+            # zero_matched keeps the stated width and drops the stated centre
+            centre = 0.0 if condition == "zero_matched" else float(e.get("mean", 0.0))
+            mus.append(centre * x_sd[i])
             sds.append(max(float(e.get("sd", 1.0)) * x_sd[i] * width_scale, 1e-3))
         betas = pm.Normal("betas", mu=np.array(mus), sigma=np.array(sds), shape=n_cov)
     elif condition == "shrink_zero":

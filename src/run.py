@@ -112,6 +112,22 @@ def _load_consensus(cfg, model_tag, which="pilot", protocol="v2"):
     return d.get("consensus")
 
 
+def _row_condition(condition, protocol="v2"):
+    """v2n fits are an ablation, recorded as e.g. llm_coef_v2n so they never pool with llm_coef."""
+    return f"{condition}_v2n" if protocol == "v2n" else condition
+
+
+def _condition_spec(cfg, condition, base_tag, which="pilot", protocol="v2"):
+    """textbook_coef reads config.yaml (KeyError when the dataset has no textbook value, so it
+    never silently runs as vague); the other LLM-free conditions use none; every elicited
+    condition uses the model's consensus."""
+    if condition == "textbook_coef":
+        return {"coefficients": cfg.dataset(which)["textbook_prior"], "variogram": {}}
+    if condition in priormod.NO_LLM_CONDITIONS:
+        return None
+    return _load_consensus(cfg, base_tag, which, protocol)
+
+
 def stage_bayes(cfg, conditions, elicit_models, which="pilot", protocol="v2",
                 width_scales=(1.0,)):
     """Fit bayesian_kriging for every (condition, model, width, density, seed, fold) cell.
@@ -129,12 +145,10 @@ def stage_bayes(cfg, conditions, elicit_models, which="pilot", protocol="v2",
             # protocol is part of the model identity in cells (v2 keeps the bare tag)
             model_tag = base_tag if protocol == "v2" or base_tag == "none" \
                 else f"{base_tag}__{protocol}"
-            spec = None
-            if condition not in priormod.NO_LLM_CONDITIONS:
-                spec = _load_consensus(cfg, base_tag, which, protocol)
-                if spec is None:
-                    print(f"[bayes] no consensus for {model_tag} -> "
-                          f"falling back to vague for condition {condition}", flush=True)
+            spec = _condition_spec(cfg, condition, base_tag, which, protocol)
+            if condition not in priormod.NO_LLM_CONDITIONS and spec is None:
+                print(f"[bayes] no consensus for {model_tag} -> "
+                      f"falling back to vague for condition {condition}", flush=True)
             for width_scale in cond_widths:
               for density in cfg.densities:
                 for seed in cfg.seeds:
@@ -152,15 +166,15 @@ def stage_bayes(cfg, conditions, elicit_models, which="pilot", protocol="v2",
                             continue
                         t0 = time.time()
                         row = dict(stage="bayes", dataset=which, predictor="bayesian_kriging",
-                                   condition=condition, elicit_model=model_tag,
+                                   condition=_row_condition(condition, protocol),
+                                   elicit_model=model_tag,
                                    density=density, seed=seed, fold=fold,
                                    width_scale=width_scale,
                                    effective_condition=eff_cond)
                         try:
-                            use_spec = spec if (condition not in priormod.NO_LLM_CONDITIONS) else None
                             use_cond = condition if (condition in priormod.NO_LLM_CONDITIONS or spec) else "vague"
                             m = _run_cell(cfg, "bayesian_kriging", use_cond, model_tag,
-                                          density, seed, fold, tr, te, bundle, use_spec,
+                                          density, seed, fold, tr, te, bundle, spec,
                                           width_scale=width_scale)
                             row.update(m); row["status"] = "ok"
                         except Exception as e:
@@ -246,8 +260,8 @@ def main():
     ap.add_argument("--models", default="local_small",
                     help="elicitation tier name whose models supply llm_* priors")
     ap.add_argument("--dataset", default="pilot",
-                    choices=["pilot", "main", "andes", "prcp", "urban"])
-    ap.add_argument("--protocol", default="v2", choices=["v2", "v3"])
+                    help="a key under datasets: in config.yaml")
+    ap.add_argument("--protocol", default="v2", choices=["v2", "v3", "v2n"])
     ap.add_argument("--width-scales", default="1",
                     help="comma list of multipliers for elicited prior sds (overconfidence "
                          "sweep); e.g. 1,2,3. width=1 reuses existing cached cells.")

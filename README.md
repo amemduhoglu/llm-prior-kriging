@@ -5,12 +5,14 @@ when the network is sparse, and of whether a language model can supply one. Data
 likelihood and sampler are held fixed and only the prior block changes, which is what
 isolates the prior's contribution.
 
-Seven prior conditions are supported. Four take elicited values: for the trend
+Nine prior conditions are supported. Four take elicited values: for the trend
 coefficients, for the covariance hyperparameters (range, sill, nugget), for both, and
-for the trend with a principled covariance default. Three contain no language model:
-the vague reference, a penalized-complexity range prior, and a zero-centred trend prior
-at unit-information width, the control that separates shrinkage towards zero from what
-an elicited prior states.
+for the trend with a principled covariance default. A fifth keeps the elicited trend
+width but centres it at zero (`zero_matched`), which separates the stated centre from the
+stated width. Four contain no language model: the vague reference, a penalized-complexity
+range prior, a zero-centred trend prior at unit-information width (`shrink_zero`), and a
+textbook trend prior, the standard lapse rate, for the temperature networks
+(`textbook_coef`).
 
 A large language model supplies the elicited values from a task description alone:
 region, target and covariate names with units, never an observed value or a summary of
@@ -32,7 +34,8 @@ src/
   theory.py            prior weight and the help condition for a Normal trend prior
   theory_check.py      applies the help condition to the networks' training folds
 prompts/               the two elicitation templates, exactly as sent (v2 point estimates,
-                       v3 quantiles after a physical decomposition of the range)
+                       v3 quantiles after a physical decomposition of the range); the
+                       neutral-description protocol v2n reuses the v2 template
 config.yaml            single source of truth: datasets, density levels, seeds,
                        prior conditions, model tiers
 requirements.txt       Python dependencies
@@ -90,16 +93,21 @@ python src/elicit.py --config config.yaml --tier local_small --dataset main
 
 # 3. fit the Bayesian model under each prior condition (model held identical)
 python src/run.py    --config config.yaml --stage bayes --dataset main \
-                     --priors vague,llm_coef,llm_variogram,llm_both,pc_range,hybrid,shrink_zero \
+                     --priors vague,llm_coef,llm_variogram,pc_range,shrink_zero,textbook_coef,zero_matched \
                      --models local_small
 
 # 4. evaluate: metrics vs. density for all conditions (writes results/summary.csv)
 python src/run.py    --config config.yaml --stage eval
 ```
 
-`--dataset` selects a network (`pilot`, `main`, `andes`, `prcp`, `urban`) and `--models` an
-elicitation tier from `config.yaml`. Two elicitation protocols are available via
-`--protocol` (`v2`, point estimate plus standard deviation; `v3`, p5/p50/p95 quantiles).
+`--dataset` selects a network (`pilot`, `main`, `andes`, `prcp`, `urban`, and the
+precipitation replication years `prcp1956`, `prcp1957`, `prcp1958`, `prcp1960`) and
+`--models` an elicitation tier from `config.yaml`. The prompt names no year, so a
+replication year reuses the `prcp` elicitation (`ln -s prcp results/elicit/prcp1960`).
+Three elicitation protocols are available via `--protocol`: `v2`, point estimate plus
+standard deviation; `v3`, p5/p50/p95 quantiles; `v2n`, the v2 template with a task
+description that does not state the target-covariate relation (cells recorded as
+e.g. `llm_coef_v2n`).
 The prior-width sweep inflates the elicited standard deviations, leaving the vague and
 PC-prior conditions untouched:
 
@@ -108,10 +116,12 @@ python src/run.py --config config.yaml --stage bayes --dataset main \
                   --priors llm_both --models frontier_openrouter --width-scales 1,2,3
 ```
 
-The known-truth range-misspecification simulation runs on its own:
+The known-truth range-misspecification simulation runs on its own. The design in the
+paper (true ranges 75, 150 and 300 km, 50 replicates, both sill priors) is:
 
 ```bash
-python src/sim.py --config config.yaml
+python src/sim.py --config config.yaml --true-ranges-km 75,150,300 --reps 50
+python src/sim.py --config config.yaml --true-ranges-km 75,150,300 --reps 50 --var-prior wide
 ```
 
 The closed-form trend-prior check reads the elicited coefficient priors and, once the
@@ -141,8 +151,8 @@ Everything is written under `results/` (set by `project.output_dir`):
 
 ## Citation
 
-Memduhoğlu, A., Duman, H. Trend and covariance priors for sparse-network Bayesian kriging
-from language-model elicitation. Under review.
+Memduhoğlu, A., Duman, H. When do informative priors help sparse-network Bayesian kriging?
+Trend and range priors from textbooks, defaults and language models. Under review.
 
 ## License
 
