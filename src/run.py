@@ -135,12 +135,13 @@ def stage_bayes(cfg, conditions, elicit_models, which="pilot", protocol="v2",
     changes. width_scales>1 inflates the elicited prior sds (overconfidence sweep)."""
     bundle = datamod.load_dataset(cfg, which)
     coords = bundle["coords"]
-    # width>1 only widens *elicited* sds, so it is meaningless for vague/pc_range — skip them.
+    # width rescales elicited sds and the shrink_zero width only; meaningless for vague/pc_range.
     ELICITED = set(priormod.COEF_INFORMED_CONDITIONS) | set(priormod.VARIO_LLM_CONDITIONS)
     for condition in conditions:
         # vague / pc_range need no LLM; llm_*/hybrid need each elicit model's consensus
         model_list = ["none"] if condition in priormod.NO_LLM_CONDITIONS else elicit_models
-        cond_widths = [w for w in width_scales if w == 1.0 or condition in ELICITED]
+        cond_widths = [w for w in width_scales
+                       if w == 1.0 or condition in ELICITED or condition == "shrink_zero"]
         for base_tag in model_list:
             # protocol is part of the model identity in cells (v2 keeps the bare tag)
             model_tag = base_tag if protocol == "v2" or base_tag == "none" \

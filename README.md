@@ -5,14 +5,16 @@ when the network is sparse, and of whether a language model can supply one. Data
 likelihood and sampler are held fixed and only the prior block changes, which is what
 isolates the prior's contribution.
 
-Nine prior conditions are supported. Four take elicited values: for the trend
+Eleven prior conditions are supported. Four take elicited values: for the trend
 coefficients, for the covariance hyperparameters (range, sill, nugget), for both, and
 for the trend with a principled covariance default. A fifth keeps the elicited trend
 width but centres it at zero (`zero_matched`), which separates the stated centre from the
 stated width. Four contain no language model: the vague reference, a penalized-complexity
 range prior, a zero-centred trend prior at unit-information width (`shrink_zero`), and a
 textbook trend prior, the standard lapse rate, for the temperature networks
-(`textbook_coef`).
+(`textbook_coef`). Two more vary only the range prior of the vague reference, to test how much the
+reference itself matters: a wider one (`vague_wide`) and one centred on a shorter range
+(`vague_short`).
 
 A large language model supplies the elicited values from a task description alone:
 region, target and covariate names with units, never an observed value or a summary of
@@ -151,8 +153,7 @@ Everything is written under `results/` (set by `project.output_dir`):
 
 ## Citation
 
-Memduhoğlu, A., Duman, H. When do informative priors help sparse-network Bayesian kriging?
-Trend and range priors from textbooks, defaults and language models. Under review.
+Memduhoğlu, A., Duman, H. Trend and range priors for sparse-network Bayesian kriging: textbook, default and language-model sources. Under review.
 
 ## License
 

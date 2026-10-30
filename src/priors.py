@@ -19,18 +19,21 @@ is the whole experiment, so the four conditions differ only in which blocks belo
                    lapse rate) with the vague covariance block.
   zero_matched   : the elicited coefficient width with a zero centre, vague covariance; separates
                    the stated centre from the stated width.
+  vague_wide     : vague with a wider range prior (log-scale sd 2); sensitivity of the reference.
+  vague_short    : vague with the range prior centred on D/10; sensitivity of the reference.
 """
 from __future__ import annotations
 import numpy as np
 import pymc as pm
 
 CONDITIONS = ("vague", "llm_coef", "llm_variogram", "llm_both", "pc_range", "hybrid",
-              "shrink_zero", "textbook_coef", "zero_matched")
+              "shrink_zero", "textbook_coef", "zero_matched", "vague_wide", "vague_short")
 
 # Conditions that need NO elicited spec (no LLM model attached); orchestration treats them
 # like `vague` — a single "none" model, spec=None.
 # textbook_coef carries a spec, but it comes from config.yaml, not a model.
-NO_LLM_CONDITIONS = ("vague", "pc_range", "shrink_zero", "textbook_coef")
+NO_LLM_CONDITIONS = ("vague", "pc_range", "shrink_zero", "textbook_coef", "vague_wide",
+                     "vague_short")
 # Conditions whose variogram block uses the principled PC prior instead of LLM/vague.
 PC_VARIO_CONDITIONS = ("pc_range", "hybrid")
 # Conditions whose coefficient block is informed by a spec (elicited, or textbook).
@@ -106,7 +109,8 @@ def build_priors(condition: str, spec: dict | None, *, n_cov: int, covariates: l
         # Data-free control: covariates are z-scored, so sd(y) is the unit-information width
         # (a one-sd covariate change moves the mean by at most about one sd of y). It separates
         # "shrink the slope" from "shrink it to the elicited value and width".
-        betas = pm.Normal("betas", mu=0.0, sigma=y_scale, shape=n_cov)
+        # width_scale < 1 gives the fixed-fraction widths (0.25, 0.5 sd y) of the width-rule control
+        betas = pm.Normal("betas", mu=0.0, sigma=y_scale * width_scale, shape=n_cov)
     else:
         betas = pm.Normal("betas", mu=0.0, sigma=10.0, shape=n_cov)
 
@@ -126,7 +130,10 @@ def build_priors(condition: str, spec: dict | None, *, n_cov: int, covariates: l
         ls = pm.LogNormal("ls", mu=mu, sigma=max(sig, 0.1))
     else:
         # vague: centered near a fraction of the domain, broad
-        ls = pm.LogNormal("ls", mu=np.log(domain_scale / 3.0), sigma=1.0)
+        # vague_wide / vague_short vary only this prior, to test the control's sensitivity
+        frac = 10.0 if condition == "vague_short" else 3.0
+        ls = pm.LogNormal("ls", mu=np.log(domain_scale / frac),
+                          sigma=2.0 if condition == "vague_wide" else 1.0)
 
     # sill (marginal variance eta2 / sd eta)
     if vario_pc:
@@ -138,7 +145,8 @@ def build_priors(condition: str, spec: dict | None, *, n_cov: int, covariates: l
         eta2 = pm.LogNormal("eta2", mu=mu, sigma=max(sig, 0.1))
         eta = pm.Deterministic("eta", pm.math.sqrt(eta2))
     else:
-        eta2 = pm.HalfNormal("eta2", sigma=y_scale)
+        # eta2 is a variance, so its vague scale is var(y), not sd(y): y stays in natural units
+        eta2 = pm.HalfNormal("eta2", sigma=y_scale ** 2)
         eta = pm.Deterministic("eta", pm.math.sqrt(eta2))
 
     # nugget (observation noise) — vague unless the LLM informed it
@@ -147,7 +155,7 @@ def build_priors(condition: str, spec: dict | None, *, n_cov: int, covariates: l
                                     vspec["nugget"].get("sd", vspec["nugget"]["mean"]) * width_scale)
         sigma2 = pm.LogNormal("sigma2", mu=mu, sigma=max(sig, 0.1))
     else:
-        sigma2 = pm.HalfNormal("sigma2", sigma=y_scale)
+        sigma2 = pm.HalfNormal("sigma2", sigma=y_scale ** 2)
     sigma = pm.Deterministic("sigma", pm.math.sqrt(sigma2))
 
     return {"beta0": beta0, "betas": betas, "ls": ls, "eta": eta, "sigma": sigma}

@@ -102,8 +102,8 @@ def fit_predict(coords_tr, y_tr, coords_te, prior_kind, range_center, seed,
         if var_prior == "wide":
             eta2 = pm.LogNormal("eta2", mu=np.log(y_scale ** 2), sigma=WIDE_VAR_LOG_SD)
         else:
-            eta2 = pm.HalfNormal("eta2", sigma=y_scale)
-        sigma2 = pm.HalfNormal("sigma2", sigma=y_scale)
+            eta2 = pm.HalfNormal("eta2", sigma=y_scale ** 2)  # variance: scale var(y)
+        sigma2 = pm.HalfNormal("sigma2", sigma=y_scale ** 2)
         cov = eta2 * pm.gp.cov.Matern52(2, ls=ls)
         gp = pm.gp.Marginal(mean_func=pm.gp.mean.Constant(beta0), cov_func=cov)
         gp.marginal_likelihood("y", X=coords_tr, y=y_tr, sigma=pm.math.sqrt(sigma2))

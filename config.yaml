@@ -151,6 +151,8 @@ experiment:
     # textbook_coef: textbook trend prior (temperature networks only); zero_matched: the
     # elicited trend width with a zero centre (does the gain come from the centre or the width?)
     trend_controls: [textbook_coef, zero_matched]
+    # sensitivity of the vague control: only its range prior changes (wider; centred on D/10)
+    vague_sensitivity: [vague_wide, vague_short]
   mcmc: {chains: 2, tune: 1000, draws: 1000, target_accept: 0.9, cores: 1}
 
 metrics: [rmse, mae, crps, pit_ks, coverage90, interval_width]
