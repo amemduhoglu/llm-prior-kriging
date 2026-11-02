@@ -10,7 +10,7 @@ coefficients, for the covariance hyperparameters (range, sill, nugget), for both
 for the trend with a principled covariance default. A fifth keeps the elicited trend
 width but centres it at zero (`zero_matched`), which separates the stated centre from the
 stated width. Four contain no language model: the vague reference, a penalized-complexity
-range prior, a zero-centred trend prior at unit-information width (`shrink_zero`), and a
+covariance prior, a zero-centred trend prior at unit-information width (`shrink_zero`), and a
 textbook trend prior, the standard lapse rate, for the temperature networks
 (`textbook_coef`). Two more vary only the range prior of the vague reference, to test how much the
 reference itself matters: a wider one (`vague_wide`) and one centred on a shorter range
@@ -153,7 +153,7 @@ Everything is written under `results/` (set by `project.output_dir`):
 
 ## Citation
 
-Memduhoğlu, A., Duman, H. Trend and range priors for sparse-network Bayesian kriging: textbook, default and language-model sources. Under review.
+Memduhoğlu, A., Duman, H. Trend and covariance priors for sparse-network Bayesian kriging: textbook, default and language-model sources. Under review.
 
 ## License
 
